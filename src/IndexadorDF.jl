@@ -17,9 +17,10 @@ MAPPING = Dict(
         "properties" => Dict(
             "title" => Dict("type" => "text"),
             "file_name" => Dict("type" => "text"),
-            "path" => Dict("type" => "text"),
+            "path" => Dict("type" => "keyword"),
+            "tag" => Dict("type" => "keyword"),
             "date" => Dict("type" => "date"),
-            "cve" => Dict("type" => "text"),
+            "cve" => Dict("type" => "keyword"),
             "content" => Dict("type" => "text")
         )
     )
@@ -57,7 +58,7 @@ function clean_text(meta, text)
     end
 end
 
-function extract_document(path)
+function extract_document(path, tag)
     local meta
     local text
     @suppress meta, text = Taro.extract(path)
@@ -66,10 +67,10 @@ function extract_document(path)
     cve = find_cve(meta, text)
     (ismissing(cve) || cve == "") && @warn "CVE not found in $path" meta
     document = Dict(
-        "_id" => hash(basename(path)),
         "title" => something(getm("title"), ""),
         "file_name" => basename(path),
         "path" => relpath(path),
+        "tag" => tag,
         "date" => something(getm("Creation-Date"), getm("date"), getm("created"), getm("meta:creation-date"), getm("pdf:docinfo:created"), ""),
         "cve" => find_cve(meta, text),
         "content" => text
@@ -77,34 +78,55 @@ function extract_document(path)
     return document
 end
 
-function extract_from_directory(path)
-    documents::Vector{Dict{AbstractString,Union{AbstractString,Integer}}} = []
+function extract_and_load_from_directory(es_client, index_name, path, tag; batch_size = 500, extract_only = false)
     files = readdir(path, sort = false, join = true)
-    @info "Starting extractions of $(length(files)) documents."
-    @showprogress 0.3 "Extracting texts..." for file in files
-        document = extract_document(file)
-        if isnothing(document) || document["content"] == ""
-            @info "Skipping $(file) because it seems empty."
-            continue
-        end
-        push!(documents, document)
-    end
-    @info "Text extraction finished."
-    return documents
-end
+    n_files = length(files)
+    total_uploaded, total_failed = (0, 0)
+    @info "Loading $(n_files) documents in batches of $(batch_size) documents."
 
-function load_in_batches(es_client, index_name, documents; batch_size = 500)
-    @info "Loading $(length(documents)) documents in batches of $(batch_size) documents."
-    @showprogress 0.3 "Loading in batches..." for i = 1:length(documents):batch_size
-        documents_batch = Iterators.take(documents[i:end], batch_size)
-        helpers.bulk(
-            es_client,
-            documents_batch,
-            index = index_name,
-            stats_only = true
-        )
+    extraction_progress = Progress(n_files; desc = "Loading documents...", dt = 0.3, showspeed = true)
+
+    for i = 1:batch_size:n_files
+        files_batch = Iterators.take((@view files[i:end]), batch_size)
+        if length(files_batch) == 0
+            break
+        end
+        document_batch::Vector{Dict{AbstractString,Union{AbstractString, UInt, Bool, Dict{String,AbstractString}, Dict{String, String}}}} = []
+        for file in files_batch
+            document = extract_document(file, tag)
+            if isnothing(document) || document["content"] == ""
+                @info "Skipping $(file) because it seems empty."
+                continue
+            end
+            push!(document_batch, Dict(
+                "_id" => hash(basename(file)),
+                "_index" => index_name,
+                "_source" => document,
+            ))
+            next!(extraction_progress)
+        end
+        if !extract_only
+            uploaded, failed = helpers.bulk(
+                es_client,
+                document_batch,
+                index = index_name,
+                stats_only = true
+            )
+            total_uploaded += uploaded
+            total_failed += failed
+        end
+        if failed > 0.05 * batch_size
+            @warn "Failed to upload $(failed) documents in batch $(i) of $(n_files) documents."
+        end
+        if total_failed > 30 && total_failed > 0.6 * (total_failed + total_uploaded)
+            @error "Error rate is above tolerance. Found $(total_failed) errors out of $(total_uploaded + total_failed) documents."
+            @error "Aborting..."
+            exit(1)
+        end
     end
-    @info "Loading finished."
+    finish!(extraction_progress)
+    @info "Loading finished: $(total_uploaded) documents uploaded, $(total_failed) documents failed."
+    return total_uploaded, total_failed
 end
 
 function create_index_if_necessary(es, index_name)
@@ -124,33 +146,35 @@ function parse_commandline()
 
     @add_arg_table s begin
         "index_name"
-            help = "name of the ES index to use"
-            required = true
+        help = "name of the ES index to use"
+        required = true
         "directory"
-            help = "directory to be loaded"
-            required = true
+        help = "directory to be loaded"
+        required = true
         "--extract-only"
-            help = "Only extract the documents"
-            action = :store_true
+        help = "Only extract the documents"
+        action = :store_true
         "--batch-size", "-b"
-            help = "Batch size for loading"
-            arg_type = Int
-            default = 500
+        help = "Batch size for loading"
+        arg_type = Int
+        default = 500
         "--scheme"
-            help = "ElasticSearch Scheme"
-            default = "http"   
+        help = "ElasticSearch Scheme"
+        default = "http"
         "--host"
-            help = "ElasticSearch Host"
-            default = "localhost"
+        help = "ElasticSearch Host"
+        default = "localhost"
         "--port"
-            help = "ElasticSearch Port"
-            default = 9200
+        help = "ElasticSearch Port"
+        default = 9200
         "--user"
-            help = "ElasticSearch User"
-            default = "elastic"
+        help = "ElasticSearch User"
+        default = "elastic"
         "--password"
-            help = "ElasticSearch Password"
-            default = "changeme"
+        help = "ElasticSearch Password"
+        default = "changeme"
+        "--tag"
+        help = "Tag to be used for the documents"
     end
 
     return parse_args(s)
@@ -162,14 +186,20 @@ function main()
 
     # Configuration
     index_name = parsed_args["index_name"]
+    tag = get(parsed_args, "tag", nothing)
+    if isnothing(tag)
+        @warn "No tag specified. Using directory name as tag."
+        tag = relpath(parsed_args["directory"])
+    end
 
     # Tika Setup
     Taro.init()
 
     # ElasticSearch Setup
-    es = elasticsearch.Elasticsearch([parsed_args["host"]], port=parsed_args["port"], scheme=parsed_args["scheme"])
-    if ! es.ping()
-        @error "ElasticSearch is not available at $(parsed_args["host"]):$(parsed_args["port"])"
+    host_uri = "$(parsed_args["scheme"])://$(parsed_args["user"]):$(parsed_args["password"])@$(parsed_args["host"]):$(parsed_args["port"])"
+    es = elasticsearch.Elasticsearch([host_uri])
+    if !es.ping()
+        @error "Error while connecting to ElasticSearch at $(parsed_args["host"]):$(parsed_args["port"])"
         exit(1)
     else
         @info "Connected to ElasticSearch at $(parsed_args["host"]):$(parsed_args["port"])"
@@ -177,18 +207,7 @@ function main()
     parsed_args["extract-only"] || create_index_if_necessary(es, index_name)
 
     # Extract the documents
-    documents = extract_from_directory(parsed_args["directory"])
-    
-    # Load in batches
-    parsed_args["extract-only"] || load_in_batches(es, index_name, documents; batch_size=parsed_args["batch-size"])
-
-    # for document in documents
-    #     # Output JSON to files
-    #     @info "Saving document $(document["file_name"])..."
-    #     open("output/$(document["file_name"]).json", "w") do io
-    #         JSON.print(io, document)
-    #     end
-    # end
+    extract_and_load_from_directory(es, index_name, parsed_args["directory"], tag; batch_size = parsed_args["batch-size"], extract_only = parsed_args["extract-only"])
 end
 
 main()
