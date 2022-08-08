@@ -2,4 +2,5 @@
 /output
 /samples
 /unprocessed
+*.jsonl
 .vscode
