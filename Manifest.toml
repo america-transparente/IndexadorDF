@@ -2,7 +2,7 @@
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "9eefa67718c49842784f527e3b1ea9247a9b300e"
+project_hash = "18f122e1655f100ccb1c9f11be34f5731c6e1c8f"
 
 [[deps.ArgParse]]
 deps = ["Logging", "TextWrap"]
@@ -143,11 +143,6 @@ version = "1.0.1"
 
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
-
-[[deps.Suppressor]]
-git-tree-sha1 = "c6ed566db2fe3931292865b966d6d140b7ef32a9"
-uuid = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
-version = "0.2.1"
 
 [[deps.TableTraits]]
 deps = ["IteratorInterfaceExtensions"]
