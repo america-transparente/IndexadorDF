@@ -41,7 +41,7 @@ end
 function extract_document(input_file, tag)
     local meta
     local text
-    redirect_stdout(devnull) do
+    redirect_stdio(stdout=devnull, stderr=devnull) do
         meta, text = Taro.extract(input_file)
     end
     text = clean_text(meta, text)
@@ -65,7 +65,7 @@ function extract_and_load_from_directory(path, output_file, tag)
     n_files = length(files)
     # We need to use atomics here because we are using multiple threads
     total_processed, total_failed = (Threads.Atomic{Int}(0), Threads.Atomic{Int}(0))
-    @info "Loading $(n_files) documents."
+    @info "Loading $(n_files) documents with $(Threads.nthreads()) threads..."
 
     extraction_progress = Progress(n_files; desc = "Loading documents...", dt = 0.3, showspeed = true)
 
@@ -80,7 +80,6 @@ function extract_and_load_from_directory(path, output_file, tag)
             end
             lock(write_lock)
             try
-                @info "Outputting file..."
                 print(output, document)
                 Threads.atomic_add!(total_processed, 1)
             finally
@@ -90,7 +89,7 @@ function extract_and_load_from_directory(path, output_file, tag)
         end
     end
     finish!(extraction_progress)
-    @info "Loading finished: $(string(total_processed)) documents uploaded, $(string(total_failed)) documents failed."
+    @info "Loading finished: $(total_processed[]) documents uploaded, $(total_failed[]) documents failed."
     return total_processed, total_failed
 
 end
