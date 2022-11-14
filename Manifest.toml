@@ -2,7 +2,7 @@
 
 julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "18f122e1655f100ccb1c9f11be34f5731c6e1c8f"
+project_hash = "23834f4b0cedc29c3f6e3b985be5b3b13cf90102"
 
 [[deps.ArgParse]]
 deps = ["Logging", "TextWrap"]
@@ -50,11 +50,6 @@ uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
 uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
-
-[[deps.DotEnv]]
-git-tree-sha1 = "d48ae0052378d697f8caf0855c4df2c54a97e580"
-uuid = "4dc1fcf4-5e3b-5448-94ab-0c38ec0385c1"
-version = "0.3.1"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
