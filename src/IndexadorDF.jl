@@ -5,7 +5,6 @@ using ProgressMeter
 using Pipe: @pipe
 using ArgParse
 using JSON
-using Suppressor
 
 function match_on_keys(pattern, dict, keys, fallback)
     for key in keys
@@ -42,7 +41,9 @@ end
 function extract_document(input_file, tag)
     local meta
     local text
-    @suppress meta, text = Taro.extract(input_file)
+    redirect_stdout(devnull) do
+        meta, text = Taro.extract(input_file)
+    end
     text = clean_text(meta, text)
     getm(key) = get(meta, key, nothing)
     cve = find_cve(meta, text)
@@ -79,7 +80,8 @@ function extract_and_load_from_directory(path, output_file, tag)
             end
             lock(write_lock)
             try
-                print(document, output)
+                @info "Outputting file..."
+                print(output, document)
                 Threads.atomic_add!(total_processed, 1)
             finally
                 unlock(write_lock)
@@ -88,8 +90,9 @@ function extract_and_load_from_directory(path, output_file, tag)
         end
     end
     finish!(extraction_progress)
-    @info "Loading finished: $(total_processed) documents uploaded, $(total_failed) documents failed."
+    @info "Loading finished: $(string(total_processed)) documents uploaded, $(string(total_failed)) documents failed."
     return total_processed, total_failed
+
 end
 
 function parse_commandline()
@@ -138,7 +141,8 @@ function main()
     # Extract the documents
     extract_and_load_from_directory(input_directory, output_file, tag)
 end
-
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
 
 end # module

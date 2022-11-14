@@ -4,3 +4,4 @@
 /unprocessed
 *.jsonl
 .vscode
+.DS_STORE
