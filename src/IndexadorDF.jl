@@ -74,33 +74,27 @@ function extract_and_load_from_directory(path, output_file, tag)
         @warn "Only one thread available, performance will be significantly impacted. It is recommended to start Julia with threading support through the --threads option."
     end
 
-    pbar = ProgressBar()
-    extraction_job = addjob!(pbar; N=n_files)
     write_lock = ReentrantLock()
-    with(pbar) do
-        open(output_file, "a") do output
-            Threads.@threads for file in files
-                document = extract_document(file, tag)
-                if isnothing(document) || document["content"] == ""
-                    @warn "Skipping $(file) because it seems empty."
-                    Threads.atomic_add!(total_failed, 1)
-                    update!(extraction_job)
-                    continue
-                end
-                lock(write_lock)
-                try
-                    println(output, JSON.json(document))
-                catch e
-                    @error "Error while writing to file" e
-                    Threads.atomic_add!(total_failed, 1)
-                    update!(extraction_job)
-                    continue
-                finally
-                    unlock(write_lock)
-                end
-                Threads.atomic_add!(total_processed, 1)
-                update!(extraction_job)
+    pbar = ProgressBar()
+    open(output_file, "a") do output
+        foreachprogress(files, pbar; parallel=true) do file
+            document = extract_document(file, tag)
+            if isnothing(document) || document["content"] == ""
+                @warn "Skipping $(file) because it seems empty."
+                Threads.atomic_add!(total_failed, 1)
+                return
             end
+            lock(write_lock)
+            try
+                println(output, JSON.json(document))
+            catch e
+                @error "Error while writing to file" e
+                Threads.atomic_add!(total_failed, 1)
+                return
+            finally
+                unlock(write_lock)
+            end
+            Threads.atomic_add!(total_processed, 1)
         end
     end
     @info "Loading finished: $(total_processed[]) documents uploaded, $(total_failed[]) documents failed."
