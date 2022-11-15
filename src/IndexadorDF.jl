@@ -74,17 +74,23 @@ function extract_and_load_from_directory(path, output_file, tag)
         Threads.@threads for file in files
             document = extract_document(file, tag)
             if isnothing(document) || document["content"] == ""
-                @info "Skipping $(file) because it seems empty."
+                @warn "Skipping $(file) because it seems empty."
                 Threads.atomic_add!(total_failed, 1)
+                next!(extraction_progress)
                 continue
             end
             lock(write_lock)
             try
-                print(output, document)
-                Threads.atomic_add!(total_processed, 1)
+                println(output, JSON.json(document))
+            catch e
+                @error "Error while writing to file" e
+                Threads.atomic_add!(total_failed, 1)
+                next!(extraction_progress)
+                continue
             finally
                 unlock(write_lock)
             end
+            Threads.atomic_add!(total_processed, 1)
             next!(extraction_progress)
         end
     end
