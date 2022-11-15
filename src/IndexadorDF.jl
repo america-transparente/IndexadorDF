@@ -4,8 +4,10 @@ using Taro
 using Pipe: @pipe
 using ArgParse
 using JSON
-using Term
 using Term.Progress
+
+import Term: install_term_logger
+install_term_logger()
 
 function match_on_keys(pattern, dict, keys, fallback)
     for key in keys
