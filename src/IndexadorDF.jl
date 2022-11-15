@@ -1,7 +1,6 @@
 module IndexadorDF
 
 using Taro
-using ProgressMeter
 using Pipe: @pipe
 using ArgParse
 using JSON
