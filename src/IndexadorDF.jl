@@ -5,6 +5,8 @@ using ProgressMeter
 using Pipe: @pipe
 using ArgParse
 using JSON
+using Term
+using Term.Progress
 
 function match_on_keys(pattern, dict, keys, fallback)
     for key in keys
@@ -71,34 +73,35 @@ function extract_and_load_from_directory(path, output_file, tag)
         @warn "Only one thread available, performance will be significantly impacted. It is recommended to start Julia with threading support through the --threads option."
     end
 
-    extraction_progress = Progress(n_files)
-
+    pbar = ProgressBar()
+    extraction_job = addjob!(pbar; N=n_files)
     write_lock = ReentrantLock()
-    open(output_file, "a") do output
-        Threads.@threads for file in files
-            document = extract_document(file, tag)
-            if isnothing(document) || document["content"] == ""
-                @warn "Skipping $(file) because it seems empty."
-                Threads.atomic_add!(total_failed, 1)
-                next!(extraction_progress)
-                continue
+    with(pbar) do
+        open(output_file, "a") do output
+            Threads.@threads for file in files
+                document = extract_document(file, tag)
+                if isnothing(document) || document["content"] == ""
+                    @warn "Skipping $(file) because it seems empty."
+                    Threads.atomic_add!(total_failed, 1)
+                    update!(extraction_job)
+                    continue
+                end
+                lock(write_lock)
+                try
+                    println(output, JSON.json(document))
+                catch e
+                    @error "Error while writing to file" e
+                    Threads.atomic_add!(total_failed, 1)
+                    update!(extraction_job)
+                    continue
+                finally
+                    unlock(write_lock)
+                end
+                Threads.atomic_add!(total_processed, 1)
+                update!(extraction_job)
             end
-            lock(write_lock)
-            try
-                println(output, JSON.json(document))
-            catch e
-                @error "Error while writing to file" e
-                Threads.atomic_add!(total_failed, 1)
-                next!(extraction_progress)
-                continue
-            finally
-                unlock(write_lock)
-            end
-            Threads.atomic_add!(total_processed, 1)
-            next!(extraction_progress)
         end
     end
-    finish!(extraction_progress)
     @info "Loading finished: $(total_processed[]) documents uploaded, $(total_failed[]) documents failed."
     return total_processed, total_failed
 
