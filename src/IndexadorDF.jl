@@ -71,7 +71,7 @@ function extract_and_load_from_directory(path, output_file, tag)
         @warn "Only one thread available, performance will be significantly impacted. It is recommended to start Julia with threading support through the --threads option."
     end
 
-    extraction_progress = Progress(n_files; desc = "Scanning...", dt = 0.3, showspeed = true)
+    extraction_progress = Progress(n_files; dt = 0.3, showspeed = true)
 
     write_lock = ReentrantLock()
     open(output_file, "a") do output
