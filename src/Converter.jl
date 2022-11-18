@@ -1,4 +1,4 @@
-module IndexadorDF
+module Converter
 
 using Taro
 using Pipe: @pipe
@@ -41,7 +41,7 @@ function clean_text(meta, text)
     end
 end
 
-function extract_document(input_file, tag)
+function extract_document(input_file, tag; scan=false)
     local meta
     local text
     redirect_stdio(stdout=devnull, stderr=devnull) do
@@ -49,21 +49,43 @@ function extract_document(input_file, tag)
     end
     text = clean_text(meta, text)
     getm(key) = get(meta, key, nothing)
-    cve = find_cve(meta, text)
-    (ismissing(cve) || cve == "") && @warn "CVE not found in $input_file" meta
+    if scan
+        # Manually scan for CVE and date
+        cve = find_cve(meta, text)
+        (ismissing(cve) || cve == "") && @warn "CVE not found in $input_file"
+        date = something(getm("Creation-Date"), getm("date"), getm("created"), getm("meta:creation-date"), getm("pdf:docinfo:created"), "")
+    else
+        # Load the associated JSON file
+        json_file = replace(input_file, r"\.pdf$" => ".json")
+        # Check that the JSON file exists
+        if !isfile(json_file)
+            @warn "JSON file $json_file does not exist."
+            return
+        end
+        metadata = JSON.parsefile(json_file)
+        cve = metadata["cve"]
+        date = metadata["date"]
+    end
+
     document = Dict(
         "title" => something(getm("title"), ""),
-        "file_name" => basename(input_file),
-        "path" => relpath(input_file),
+        "file_name" => replace(basename(input_file), r"\.pdf$" => ""),
         "tag" => tag,
-        "date" => something(getm("Creation-Date"), getm("date"), getm("created"), getm("meta:creation-date"), getm("pdf:docinfo:created"), ""),
-        "cve" => find_cve(meta, text),
+        "date" => date,
+        "cve" => cve,
         "content" => text
     )
+    if scan
+        document["path"] = relpath(input_file, pwd())
+        document["url"] = ""
+    else
+        document["path"] = ""
+        document["url"] = metadata["url"]
+    end
     return document
 end
 
-function extract_and_load_from_directory(path, output_file, tag)
+function extract_and_load_from_directory(path, output_file, tag; scan=false)
     files = readdir(path, sort = false, join = true)
     n_files = length(files)
     # We need to use atomics here because we are using multiple threads
@@ -78,7 +100,7 @@ function extract_and_load_from_directory(path, output_file, tag)
     pbar = ProgressBar()
     open(output_file, "a") do output
         foreachprogress(files, pbar; parallel=true) do file
-            document = extract_document(file, tag)
+            document = extract_document(file, tag; scan=scan)
             if isnothing(document) || document["content"] == ""
                 @warn "Skipping $(file) because it seems empty."
                 Threads.atomic_add!(total_failed, 1)
@@ -114,6 +136,9 @@ function parse_commandline()
         required = true
         "--tag"
         help = "Tag to be used for the documents"
+        "--scan"
+        help = "Manually scan the documents to extract CVE and date"
+        action = :store_true
     end
 
     return parse_args(s)
@@ -142,11 +167,18 @@ function main()
         tag = relpath(input_directory)
     end
 
+    scan = parsed_args["scan"]
+    if scan
+        @info "Using manual scan mode. No JSON files will be loaded."
+    else
+        @info "Loading metadata from JSON files. If you want to use manual scan mode, use the --scan option."
+    end
+
     # Tika Setup
     Taro.init()
 
     # Extract the documents
-    extract_and_load_from_directory(input_directory, output_file, tag)
+    extract_and_load_from_directory(input_directory, output_file, tag; scan=scan)
 end
 if abspath(PROGRAM_FILE) == @__FILE__
     main()

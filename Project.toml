@@ -1,10 +1,14 @@
-name = "IndexadorDF"
+name = "DDScripts"
 uuid = "697a2f06-d245-4eac-9d0a-bc2fa8bc9c82"
 authors = ["Agustín Covarrubias <agucova@uc.cl>"]
 version = "0.1.0"
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Pipe = "b98c9c47-44ae-5843-9183-064241ee97a0"
 Taro = "61d0e4fa-4e73-5030-88a9-ae4c27b203dd"
