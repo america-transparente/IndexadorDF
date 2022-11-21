@@ -134,6 +134,13 @@ function main()
             @error "Link file $(link_file) does not have the required URL pattern."
             exit(1)
         end
+
+        # Skip already downloaded files
+        new_links = filter(row -> !isfile(joinpath(output_directory, row.cve * ".pdf")), links)
+        if (size(new_links, 1) < size(links, 1))
+            @info "Skipping $(size(links, 1) - size(new_links, 1)) already downloaded files."
+            links = new_links
+        end
     end
 
     # Download the documents
