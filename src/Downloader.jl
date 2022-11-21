@@ -85,7 +85,11 @@ function main()
 
     # Load the links
     @info "Loading links from $(link_file)"
-    links = CSV.read(link_file, DataFrame)
+    links = CSV.read(link_file, DataFrame; types=Dict(
+        :url => String,
+        :cve => String,
+        :date => Date,
+    ))
 
     println()
 
