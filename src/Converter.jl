@@ -88,6 +88,10 @@ end
 function extract_and_load_from_directory(path, output_file, tag; scan=false)
     files = readdir(path, sort = false, join = true)
     n_files = length(files)
+
+    # Filter out non-PDF files
+    files = filter(f -> endswith(f, ".pdf"), files)
+
     # We need to use atomics here because we are using multiple threads
     total_processed, total_failed = (Threads.Atomic{Int}(0), Threads.Atomic{Int}(0))
     n_threads = Threads.nthreads()
