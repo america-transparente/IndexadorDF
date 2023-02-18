@@ -5,7 +5,6 @@ using JSON
 using CSV
 using DataFrames
 using Downloads
-using Dates
 
 import Term: install_term_logger
 install_term_logger()
@@ -19,7 +18,7 @@ function parse_commandline()
 
     @add_arg_table s begin
         "link-file"
-        help = "CSV with the link, date and CVE of each document"
+        help = "CSV with the link and CVE of each document"
         required = true
         "output-directory"
         help = "directory where to output the documents"
@@ -88,7 +87,6 @@ function main()
     links = CSV.read(link_file, DataFrame; types=Dict(
         :url => String,
         :cve => String,
-        :date => Date,
     ))
 
     println()
@@ -97,15 +95,15 @@ function main()
     processing_pbar = ProgressBar()
     job = addjob!(processing_pbar; description="Processing links")
     with(processing_pbar) do
-        # Check the DataFrame has columns link,cve,date
-        if !all(occursin.(["url", "cve", "date"], names(links)))
-            @error "Link file $(link_file) does not have the required columns (url,cve,date)."
+        # Check the DataFrame has columns link,cve
+        if !all(occursin.(["url", "cve"], names(links)))
+            @error "Link file $(link_file) does not have the required columns (url,cve)."
             exit(1)
         end
 
         # Check types
-        if !all(eltype.([links.url, links.cve, links.date]) .<: [AbstractString, AbstractString, Date])
-            @error "Link file $(link_file) does not have the required types (String,String,Date)."
+        if !all(eltype.([links.url, links.cve]) .<: [AbstractString, AbstractString])
+            @error "Link file $(link_file) does not have the required types (String,String)."
             exit(1)
         end
 
@@ -156,7 +154,7 @@ function main()
         end
 
         # Write the metadata
-        metadata = Dict("url" => link.url, "cve" => link.cve, "date" => link.date)
+        metadata = Dict("url" => link.url, "cve" => link.cve)
         if !write_metadata(metadata, joinpath(output_directory, link.cve * ".json"))
             @warn "Skipping $(link.url) because its metadata could not be written."
             return
